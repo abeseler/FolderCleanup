@@ -14,10 +14,10 @@ namespace FolderCleanup
 {
     public partial class Service : ServiceBase
     {
-        private readonly int interval = int.Parse(ConfigurationManager.AppSettings["pollInterval"]) * 1000;
         private readonly int maxDays = int.Parse(ConfigurationManager.AppSettings["fileRetainDays"]);
         private readonly string folderPath = ConfigurationManager.AppSettings["folderToCleanup"];
         private readonly Timer serviceTimer = new Timer();
+        private int poll_counter = 0;
 
         public Service()
         {
@@ -26,62 +26,49 @@ namespace FolderCleanup
 
         protected override void OnStart(string[] args)
         {
-            Logger.WriteMessage("Service has started...");
+            Logger.AddMessage("SERVICE_STARTED");
             serviceTimer.Elapsed += new ElapsedEventHandler(OnElapsedTime);
-            serviceTimer.Interval = interval;
-            serviceTimer.Enabled = true;
+            serviceTimer.Interval = int.Parse(ConfigurationManager.AppSettings["pollInterval"]) * 1000;
+            serviceTimer.Start();
         }
 
         private void OnElapsedTime(object sender, ElapsedEventArgs e)
         {
+            serviceTimer.Stop();
+            poll_counter = poll_counter == 999 ? 1 : poll_counter + 1;
+
+            Logger.AddMessage($"FOLDER_CLEANUP_STARTING_{poll_counter}");
+
             if (Directory.Exists(folderPath))
             {
-                Logger.WriteMessage("Starting folder clean-up");
                 int count = 0;
                 string[] files = Directory.GetFiles(folderPath).ToArray();
+
                 foreach (string file in files)
                 {
-                    DateTime fileLastMod = File.GetLastAccessTime(file);
+                    DateTime fileLastMod = File.GetCreationTime(file);
                     if ((DateTime.Today - fileLastMod).Days > maxDays)
                     {
                         File.Delete(file);
                         count++;
                     }
                 }
-                Logger.WriteMessage("Number of files deleted: " + count);
+
+                Logger.AddMessage($"Removed {count} files.");
             }
             else
             {
-                Logger.WriteMessage("DirectoryNotFound -- " + folderPath);
+                Logger.AddMessage("EXCEPTION_DIRECTORY_NOT_FOUND: " + folderPath);
             }
+
+            Logger.AddMessage($"FOLDER_CLEANUP_COMPLETE_{poll_counter}");
+
+            serviceTimer.Start();
         }
 
         protected override void OnStop()
         {
-            Logger.WriteMessage("Service has stopped");
-        }
-
-        public void RunInConsole()
-        {
-            string[] args = new string[0];
-            OnStart(args);
-        }
-
-        public void Pause()
-        {
-            serviceTimer.Enabled = false;
-            Logger.WriteMessage("Service has been paused");
-        }
-
-        public void Resume()
-        {
-            serviceTimer.Enabled = true;
-            Logger.WriteMessage("Service has resumed...");
-        }
-
-        public Boolean IsRunning()
-        {
-            return serviceTimer.Enabled;
+            Logger.WriteMessageNoWait("SERVICE_STOPPED");
         }
 
         public Boolean IsInstalled()

@@ -15,7 +15,8 @@ namespace FolderCleanup
         private readonly Service service = new Service();
         public void Start()
         {
-            service.RunInConsole();
+            Logger.AddMessage("Started in console");
+
             while (running)
             {
                 DisplayMenu();
@@ -23,8 +24,7 @@ namespace FolderCleanup
                 string input = Console.ReadLine();
                 Console.Clear();
                 string message = HandleInput(input);
-                Console.WriteLine(message);
-                Console.WriteLine(" ");
+                Console.WriteLine(message+"\n");
             }
         }
 
@@ -32,8 +32,7 @@ namespace FolderCleanup
         {
             List<string> menu = new List<string>
             {
-                "Options:"
-                ," "
+                "Options:\n"
             };
             if (service.IsInstalled())
             {
@@ -43,16 +42,7 @@ namespace FolderCleanup
             {
                 menu.Add(" 1 - Install");
             }
-            if (service.IsRunning())
-            {
-                menu.Add(" 2 - Pause Cleanup");
-            }
-            else
-            {
-                menu.Add(" 2 - Resume Cleanup");
-            }
-            menu.Add(" 3 - Exit");
-            menu.Add(" ");
+            menu.Add(" 2 - Exit\n");
             foreach (string item in menu)
             {
                 Console.WriteLine(item);
@@ -68,12 +58,12 @@ namespace FolderCleanup
                     if (service.IsInstalled())
                     {
                         Console.WriteLine("Removing Windows Service...");
-                        Logger.WriteMessage("Removing Windows Service...");
+                        Logger.AddMessage("Removing Windows Service...");
                     }
                     else
                     {
                         Console.WriteLine("Installing Windows Service...");
-                        Logger.WriteMessage("Installing Windows Service...");
+                        Logger.AddMessage("Installing Windows Service...");
                     }
                     try
                     {
@@ -84,33 +74,21 @@ namespace FolderCleanup
                         if (result == 0)
                         {
                             message = "The operation completed successfully";
-                            Logger.WriteMessage(message);
+                            Logger.AddMessage(message);
                         }
                         else
                         {
                             message = "The operation failed with return code " + result.ToString();
-                            Logger.WriteMessage(message);
+                            Logger.AddMessage(message);
                         }
                     }
                     catch (Exception ex)
                     {
-                        Logger.WriteMessage(ex.ToString());
+                        Logger.AddMessage(ex.ToString());
                     }
                     break;
                 case "2":
-                    if (service.IsRunning())
-                    {
-                        service.Pause();
-                        message = "Service has been paused.";
-                    }
-                    else
-                    {
-                        service.Resume();
-                        message = "Service has resumed...";
-                    }
-                    break;
-                case "3":
-                    Logger.WriteMessage("Exiting console");
+                    Logger.AddMessage("Exiting console");
                     running = false;
                     break;
                 default:

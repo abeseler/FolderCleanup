@@ -10,82 +10,106 @@ namespace FolderCleanup
 {
     class Logger
     {
-        public static string logFileName;
+        private static Queue<string> messages = new Queue<string>();
+        private static int logSize = 0;
+        private static bool changed = false;
+        private static readonly bool enabled = int.Parse(ConfigurationManager.AppSettings["loggingEnabled"]) == 0 ? false : true;
         private static readonly int maxLogSize = int.Parse(ConfigurationManager.AppSettings["maxLogSize"]) * 1000;
-        private static readonly int interval = int.Parse(ConfigurationManager.AppSettings["maintInterval"]) * 1000;
-        private static readonly string path = AppDomain.CurrentDomain.BaseDirectory + "\\Logs\\";
-        private static readonly Timer maintTimer = new Timer();
+        private static readonly string filePath = Environment.UserInteractive ? AppDomain.CurrentDomain.BaseDirectory + "\\Log_Console.txt" : AppDomain.CurrentDomain.BaseDirectory + "\\Log_Service.txt";
+        private static readonly Timer saveLogTimer = new Timer();
 
         static Logger()
         {
-            maintTimer.Elapsed += new ElapsedEventHandler(LogMaintenance);
-            maintTimer.Interval = interval;
-            maintTimer.Enabled = true;
-            if (Environment.UserInteractive)
-            {
-                logFileName = "ConsoleLog.txt";
-            }
-            else
-            {
-                logFileName = "ServiceLog.txt";
-            }
-        }
-
-        public static void WriteMessage(string Message)
-        {
-            Message = "[" + DateTime.Now + "] " + Message;
-            string filePath = path + logFileName;
-            if (!Directory.Exists(path))
-            {
-                Directory.CreateDirectory(path);
-            }
-            using (StreamWriter sw = new StreamWriter(filePath, true))
-            {
-                sw.WriteLine(Message);
-            }
-        }
-
-        private static void LogMaintenance(object sender, ElapsedEventArgs e)
-        {
-            string filePath = path + logFileName;
             if (File.Exists(filePath))
             {
-                long length = new FileInfo(filePath).Length;
-                if (length > maxLogSize)
+                using (StreamReader sr = new StreamReader(filePath))
                 {
-                    List<string> lines = new List<string>();
-                    using (StreamReader sr = new StreamReader(filePath))
+                    string line = String.Empty;
+                    while ((line = sr.ReadLine()) != null)
                     {
-                        string line = String.Empty;
-                        long leftToRemove = length - maxLogSize;
-                        while ((line = sr.ReadLine()) != null)
-                        {
-                            if (leftToRemove > 0)
-                            {
-                                leftToRemove -= line.Length;
-                            }
-                            else
-                            {
-
-                                lines.Add(line);
-                            }
-                        }
+                        messages.Enqueue(line);
+                        logSize += line.Length;
                     }
+                }
+            }
+            saveLogTimer.Elapsed += new ElapsedEventHandler(OnElapsedTime);
+            saveLogTimer.Interval = int.Parse(ConfigurationManager.AppSettings["logWriteInterval"]);
+            saveLogTimer.Start();
+        }
+
+        public static void AddMessage(string Message)
+        {
+            if (enabled)
+            {
+                try
+                {
+                    Message = "[" + DateTime.Now + "] " + Message;
+                    messages.Enqueue(Message);
+                    logSize += Message.Length;
+
+                    while (logSize > maxLogSize)
+                    {
+                        Message = messages.Dequeue();
+                        logSize -= Message.Length;
+                    }
+
+                    changed = true;
+                }
+                catch (Exception ex)
+                {
+                    messages.Enqueue("EXCEPTION_LOGGER_ADDMESSAGE\n" + ex.ToString());
+                }
+            }
+        }
+
+        public static void WriteMessageNoWait(string Message)
+        {
+            if (enabled)
+            {
+                try
+                {
+                    Message = "[" + DateTime.Now + "] " + Message;
+
+                    using (StreamWriter sw = new StreamWriter(filePath, true))
+                    {
+                        sw.WriteLine(Message);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    messages.Enqueue("EXCEPTION_LOGGER_WRITEMESSAGE\n" + ex.ToString());
+                }
+            }
+        }
+
+        private static void OnElapsedTime(object sender, ElapsedEventArgs e)
+        {
+            saveLogTimer.Stop();
+
+            try
+            {
+                if (changed)
+                {
+                    changed = false;
+
                     using (StreamWriter sw = new StreamWriter(filePath, false))
                     {
-                        foreach (string line in lines)
+                        string[] logMessages = new string[messages.Count];
+                        messages.CopyTo(logMessages, 0);
+
+                        foreach (string line in logMessages)
                         {
                             sw.WriteLine(line);
                         }
                     }
-                    decimal newLen = new FileInfo(filePath).Length / 1000;
-                    WriteMessage("LOGMAINT: Completed. Ending file size is " + Math.Round(newLen) + "KB");
-                }
-                else
-                {
-                    WriteMessage("LOGMAINT: File size is below threshold");
                 }
             }
+            catch (Exception ex)
+            {
+                messages.Enqueue("EXCEPTION_LOGGER_ONELAPSEDTIME\n" + ex.ToString());
+            }
+
+            saveLogTimer.Start();
         }
     }
 }
